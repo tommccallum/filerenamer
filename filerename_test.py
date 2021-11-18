@@ -34,8 +34,8 @@ class FileRenamerTest(unittest.TestCase):
     def test_createConfigWithFile(self):
         config = filerename.createConfig("filerename.json")
         self.assertEqual(config.testMode, True)
-        self.assertEqual(config.remove, [":","@",")","?"])
-        self.assertEqual(config.replace, {"(": "- "})
+        self.assertGreater(len(config.remove), 0 )
+        self.assertGreater(len(config.replace), 0)
 
 if __name__ == '__main__':
     unittest.main()
