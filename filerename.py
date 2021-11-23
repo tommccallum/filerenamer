@@ -2,12 +2,14 @@ import json
 import shutil
 import os
 import sys
+import re
 
 class Config:
   def __init__(self):
     self.remove = [ ":" ]
     self.replace = { "(":"- " }
     self.testMode = True
+    self.makeM3u = False
 
 def createConfig(file=None):
   config = Config()
@@ -23,10 +25,16 @@ def createConfig(file=None):
 def renameString(config, text):
   if text.startswith("#EXT"):
     return text
-  for ch in config.remove:
-    text = text.replace(ch, "")
+  # we replace first and then remove so that if the replacement
+  # adds in an illegal character then we can remove it
   for ch in config.replace:
     text = text.replace(ch, config.replace[ch])
+  for ch in config.remove:
+    text = text.replace(ch, "")
+  ## collapse multiple spaces
+  multiple_spaces = re.compile(r"\s+")
+  text = multiple_spaces.sub(" ", text)
+  text = text.strip()
   return text
 
 def renameDirectory(config, path):
@@ -66,6 +74,40 @@ def renameDirectory(config, path):
         renameM3u(config, filePath)
       else:
         raise ValueError("invalid file {} found with extension {}".format(filePath, ext))
+
+  if config.makeM3u:
+    for root,d_names,f_names in os.walk(targetPath):
+      for d in d_names:
+        dirPath = os.path.join(root,d)
+        makeM3UFile(config, dirPath)
+
+def makeM3UFile(config, path):
+  if os.path.isdir(path) == False:
+    raise ValueError("{} must be a directory to make M3u file from".format(path))
+  dirName = os.path.basename(path)
+  dirPath = os.path.dirname(path)
+  m3uFileName = dirName.strip() + ".m3u"
+  m3uPath = os.path.join(dirPath, m3uFileName)
+  if os.path.isfile(m3uPath):
+    return
+  
+  print("[m3u] Creating {}".format(m3uPath))
+  if config.testMode == False:
+    lines = []
+    for root,d_names,f_names in os.walk(targetPath):
+      for f in f_names:
+        filePath = os.path.join(root, f)
+        lines.append(filePath)
+    
+    lines = map( lambda x : x + '\n', lines)
+
+    dirName = os.path.basename(path)
+    dirPath = os.path.dirname(path)
+    m3uFileName = dirName.strip() + ".m3u"
+    m3uPath = os.path.join(dirPath, m3uFileName)
+    with open(m3uPath,"w") as outFile:
+      outFile.writelines(lines)
+
 
 def renameAudioFile(config, path):
   """
@@ -111,13 +153,15 @@ def renameM3u(config, path):
   if not config.testMode:
     with open(newPath, "w") as outFile:
       outFile.writelines(newContents)
-    print("[m3u] Deleting {}".format(path))
-    os.remove(path)
+    if newPath != path:
+      print("[m3u] Deleting {}".format(path))
+      os.remove(path)
 
 
 if __name__ == "__main__":
   configFilePath = None
   testMode = True
+  makeM3u = False
   ii=1;
   while ii < len(sys.argv)-1:
     if sys.argv[ii] == "-c":
@@ -125,12 +169,15 @@ if __name__ == "__main__":
       ii += 1
     elif sys.argv[ii] == "--force":
       testMode = False
+    elif sys.argv[ii] == "--make-m3u":
+      makeM3u = True
     else:
       raise ValueError("invalid argument {}".format(sys.argv[ii]))
     ii+= 1
   targetPath = sys.argv[len(sys.argv)-1]
   config = createConfig(configFilePath)
   config.testMode = testMode
+  config.makeM3u = makeM3u
   if os.path.isdir(targetPath):
     renameDirectory(config, targetPath)
   elif os.path.isfile(targetPath):
