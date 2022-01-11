@@ -1,3 +1,5 @@
 __pycache__/
 ripped
 venv/
+*.log
+*.txt

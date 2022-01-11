@@ -4,12 +4,15 @@ import os
 import sys
 import re
 
+GLOBAL_EXTENSIONS_TO_IGNORE=[".iso"]
+
 class Config:
   def __init__(self):
     self.remove = [ ":" ]
     self.replace = { "(":"- " }
     self.testMode = True
     self.makeM3u = False
+    self.editMetaTags = False
 
 def createConfig(file=None):
   config = Config()
@@ -37,21 +40,32 @@ def renameString(config, text):
   text = text.strip()
   return text
 
-def renameDirectory(config, path):
+def renameDirectory(config, path, renameThisDirectory=True):
   """
   Rename the directory and its subdirectories
   """
+  print("[ENTER] {}".format(path))
   if not os.path.isdir(path):
     raise RuntimeError("directory {} does not exist".format(path))
-  newPath = renameString(config, path)
-  if newPath != path:
-    if config.testMode:
-      if path != newPath:
-        print("[dir] Transform {} => {}".format(path, newPath))
-    else:
-      if path != newPath:
-        print("[dir] Transform {} => {}".format(path, newPath))
-        shutil.move(path, newPath)
+
+  if renameThisDirectory:
+    print("[RENAME] Directory: {}".format(path))
+    lastDirName = os.path.basename(path)
+    dirPath = os.path.dirname(path)
+    newLastDirName = renameString(config, lastDirName)
+    newPath = os.path.join(dirPath, newLastDirName)
+    if newPath != path:
+      if config.testMode:
+        if path != newPath:
+          print("[dir] Transform {} => {}".format(path, newPath))
+      else:
+        if path != newPath:
+          print("[dir] Transform {} => {}".format(path, newPath))
+          if os.path.isdir(newPath):
+            raise ValueError("[Rename failed] Attempted to transform {} to {} but it already exists".format(path, newPath))
+          shutil.move(path, newPath)
+  else:
+    newPath = path
 
   targetPath = newPath
   if config.testMode:
@@ -69,9 +83,14 @@ def renameDirectory(config, path):
       filePath = os.path.join(root, f)
       _, ext = os.path.splitext(filePath)
       if ext == ".mp3":
-        renameAudioFile(config, filePath)
+        renameFile(config, filePath)
       elif ext == ".m3u":
         renameM3u(config, filePath)
+      elif ext == ".mp4" or ext == ".m4v":
+        renameFile(config, filePath)
+      elif ext in GLOBAL_EXTENSIONS_TO_IGNORE:
+        # ignore iso files as they are ripped dvds most likely
+        pass
       else:
         raise ValueError("invalid file {} found with extension {}".format(filePath, ext))
 
@@ -80,6 +99,12 @@ def renameDirectory(config, path):
       for d in d_names:
         dirPath = os.path.join(root,d)
         makeM3UFile(config, dirPath)
+
+  if config.editMetaTags:
+    for root,d_names,f_names in os.walk(targetPath):
+      for d in d_names:
+        dirPath = os.path.join(root,d)
+        modifyMetaTags(config, dirPath)
 
 def makeM3UFile(config, path):
   if os.path.isdir(path) == False:
@@ -94,56 +119,80 @@ def makeM3UFile(config, path):
   print("[m3u] Creating {}".format(m3uPath))
   if config.testMode == False:
     lines = []
-    for root,d_names,f_names in os.walk(targetPath):
-      for f in f_names:
-        filePath = os.path.join(root, f)
-        lines.append(filePath)
-    
-    lines = map( lambda x : x + '\n', lines)
+    for root,d_names,f_names in os.walk(path):
+      for f in sorted(f_names):
+        _, fileExt = os.path.splitext(f)
+        if fileExt == ".mp3":
+          filePath = os.path.join(dirName, f)
+          lines.append(filePath)
 
-    dirName = os.path.basename(path)
-    dirPath = os.path.dirname(path)
-    m3uFileName = dirName.strip() + ".m3u"
-    m3uPath = os.path.join(dirPath, m3uFileName)
-    with open(m3uPath,"w") as outFile:
-      outFile.writelines(lines)
+    if len(lines) > 0:
+      lines = map( lambda x : x + '\n', lines)
+
+      dirName = os.path.basename(path)
+      dirPath = os.path.dirname(path)
+      m3uFileName = dirName.strip() + ".m3u"
+      m3uPath = os.path.join(dirPath, m3uFileName)
+      with open(m3uPath,"w") as outFile:
+        outFile.writelines(lines)
 
 
-def renameAudioFile(config, path):
+def renameFile(config, path):
   """
-  Rename the audio file
+  Rename the file
   """
   if not os.path.isfile(path):
     raise RuntimeError("file {} does not exist".format(path))
   dirNamePart = os.path.dirname(path)
   fileNamePart = os.path.basename(path)
-  newFileNamePath = renameString(config, fileNamePart)
+  fileNameFirst, ext = os.path.splitext(fileNamePart)
+  newFileNameFirst = renameString(config, fileNameFirst)
+  newFileNamePath = newFileNameFirst + ext
   newPath = os.path.join(dirNamePart, newFileNamePath)
   if config.testMode:
     if path != newPath:
-      print("[mp3] Transform {} => {}".format(path, newPath))
+      print("[file] Transform {} => {}".format(path, newPath))
   else:
     if path != newPath:
-      print("[mp3] Transform {} => {}".format(path, newPath))
+      print("[file] Transform {} => {}".format(path, newPath))
+      if os.path.isdir(newPath):
+          raise ValueError("[Move failed] Attempted to transform {} to {} but it already exists".format(path, newPath))
       shutil.move(path, newPath)
 
 def renameM3u(config, path):
   """
   Rename the m3u file itself and also the contents
   """
+  print("[Rename M3U List] {}".format(path))
+  _, ext = os.path.splitext(path)
+  if ext != ".m3u":
+    raise RuntimeError("{} is not an m3u file".format(path))
   if not os.path.isfile(path):
     raise RuntimeError("file {} does not exist".format(path))
   dirNamePart = os.path.dirname(path)
   fileNamePart = os.path.basename(path)
-  newFileNamePath = renameString(config, fileNamePart)
+  fileNameFirst, ext = os.path.splitext(fileNamePart)
+  newFileNameFirst = renameString(config, fileNameFirst)
+  newFileNamePath = newFileNameFirst + ext
+  
   newPath = os.path.join(dirNamePart, newFileNamePath)
   
   newContents = []
   with open(path, "r") as inFile:
     contents = inFile.readlines()
     for l in contents:
-      newl = renameString(config, l.strip())
-      newContents.append(newl + "\n")
+      xpath = l.strip()
+      if xpath.startswith("#"):
+        newContents.append(xpath + "\n")
+      else:  
+        d = os.path.dirname(xpath)
+        base = os.path.basename(xpath)
+        file, ext = os.path.splitext(base)
+        newl = renameString(config, file)
+        newl = os.path.join(d,newl + ext)
+        # if not os.path.isfile(newl) and not config.testMode :
+        #   raise RuntimeError("{} => {}, transformed file does not exist".format(path, newl))
+        newContents.append(newl + "\n")
   
   
   for ii, cc in enumerate(contents):
@@ -154,14 +203,60 @@ def renameM3u(config, path):
     with open(newPath, "w") as outFile:
       outFile.writelines(newContents)
     if newPath != path:
-      print("[m3u] Deleting {}".format(path))
-      os.remove(path)
+      if os.path.isfile(path):
+        print("[m3u] Deleting {}".format(path))
+        os.remove(path)
 
+def checkCapitalisation(x):
+  """
+  We don't want common words such as these capitalised e.g. First in a title
+  """
+  words = ['the', 'a', 'of', 'some', 'and', 'or', 'in', 'at', 'all']
+  if x.lower() in words:
+    return x.lower()
+  return x
+
+def modifyMetaTags(config, path):
+  if os.path.isdir(path) == False:
+    raise ValueError("{} must be a directory".format(path))
+  dirName = os.path.basename(path)
+  dirPath = os.path.dirname(path)
+  
+  for root,d_names,f_names in os.walk(path):
+    for f in sorted(f_names):
+      filePath = os.path.join(path, f)
+      fileName, fileExt = os.path.splitext(f)
+      if fileExt == ".mp4" or fileExt == ".m4v":
+        print("[metadata] Modifying {}".format(filePath))
+        fileName = fileName.replace("_", " ")
+        if fileName.isupper() or fileName.islower():
+          fileName = fileName.capitalize()
+        parts = fileName.split("-")
+        if len(parts) == 1:
+          album = ""
+          title = parts[0]
+        else:
+          parts = [ x.strip() for x in parts ]
+          parts = [ checkCapitalisation(x) for x in parts ]
+          album = parts[0].strip()
+          title = ' - '.join(parts[1:])
+        outFilePath = "{}.tmp{}".format(filePath, fileExt)
+        cmd = "ffmpeg -i \"{}\" -metadata title=\"{}\" -metadata album=\"{}\" -codec copy \"{}\"".format(filePath, title, album, outFilePath)
+        print("[metadata] album={} title={}".format(album, title))
+        print("[ffmpeg] {}".format(cmd))
+        if config.testMode == False:
+          os.system(cmd)
+          if os.path.getsize(outFilePath) > 0:
+            shutil.copyfile(outFilePath, filePath)
+            os.remove(outFilePath)
+          else:
+            raise RuntimeError("Modified file {} was zero length.\nFFmpeg command executed was:\n'{}'".format(outFilePath, cmd))
 
 if __name__ == "__main__":
   configFilePath = None
   testMode = True
   makeM3u = False
+  editMetaTags = False
   ii=1;
   while ii < len(sys.argv)-1:
     if sys.argv[ii] == "-c":
@@ -171,6 +266,8 @@ if __name__ == "__main__":
       testMode = False
     elif sys.argv[ii] == "--make-m3u":
       makeM3u = True
+    elif sys.argv[ii] == "--edit-meta-tag" or sys.argv[ii] == "--edit-meta-tags":
+      editMetaTags = True
     else:
       raise ValueError("invalid argument {}".format(sys.argv[ii]))
     ii+= 1
@@ -178,12 +275,51 @@ if __name__ == "__main__":
   config = createConfig(configFilePath)
   config.testMode = testMode
   config.makeM3u = makeM3u
+  config.editMetaTags = editMetaTags
   if os.path.isdir(targetPath):
-    renameDirectory(config, targetPath)
+    # run a check on numbers of files and directories
+    dirCount = 0
+    fileExts = {}
+    for root,d_names,f_names in os.walk(targetPath):
+      for d in d_names:
+        dirCount += 1
+      for f in f_names:
+        _, ext  = os.path.splitext(f)
+        if ext not in fileExts:
+          fileExts[ext] = 1
+        else:
+          fileExts[ext] += 1
+    print("Directories: {}".format(dirCount))
+    for e in fileExts.keys():
+      print("{}: {}".format(e, fileExts[e]))
+    
+    renameDirectory(config, targetPath, False)
+
+    newDirCount = 0
+    newFileExts = {}
+    for root,d_names,f_names in os.walk(targetPath):
+      for d in d_names:
+        newDirCount += 1
+      for f in f_names:
+        _, ext  = os.path.splitext(f)
+        if ext not in newFileExts:
+          newFileExts[ext] = 1
+        else:
+          newFileExts[ext] += 1
+    print("Directories: {}".format(newDirCount))
+    for e in newFileExts.keys():
+      print("{}: {}".format(e, newFileExts[e]))
+    
+    for e in fileExts:
+      if fileExts[e] != newFileExts[e]:
+        raise RuntimeError("Lost music: {} => {}".format(fileExts[e], newFileExts[e]))
+    if newDirCount != dirCount:
+      raise RuntimeError("Lost directory: {} => {}".format(dirCount, newDirCount))
+
   elif os.path.isfile(targetPath):
     _, ext = os.path.splitext(targetPath)
     if ext == ".mp3":
-      renameAudioFile(config, targetPath)
+      renameFile(config, targetPath)
     elif ext == ".m3u":
       renameM3u(config, targetPath)
     else:
