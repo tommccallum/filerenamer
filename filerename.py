@@ -239,7 +239,8 @@ def modifyMetaTags(config, path):
           parts = [ x.strip() for x in parts ]
           parts = [ checkCapitalisation(x) for x in parts ]
           album = parts[0].strip()
-          title = ' - '.join(parts[1:])
+          # keep the album name in the main name as Plex does not show albums for films
+          title = ' - '.join(parts[0:])
         outFilePath = "{}.tmp{}".format(filePath, fileExt)
         cmd = "ffmpeg -i \"{}\" -metadata title=\"{}\" -metadata album=\"{}\" -codec copy \"{}\"".format(filePath, title, album, outFilePath)
         print("[metadata] album={} title={}".format(album, title))
