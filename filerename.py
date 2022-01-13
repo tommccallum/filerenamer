@@ -101,10 +101,8 @@ def renameDirectory(config, path, renameThisDirectory=True):
         makeM3UFile(config, dirPath)
 
   if config.editMetaTags:
-    for root,d_names,f_names in os.walk(targetPath):
-      for d in d_names:
-        dirPath = os.path.join(root,d)
-        modifyMetaTags(config, dirPath)
+    modifyMetaTags(config, targetPath)
+    # no need to recurse down into the directories because this is done above
 
 def makeM3UFile(config, path):
   if os.path.isdir(path) == False:
@@ -125,7 +123,7 @@ def makeM3UFile(config, path):
         if fileExt == ".mp3":
           filePath = os.path.join(dirName, f)
           lines.append(filePath)
-
+      
     if len(lines) > 0:
       lines = map( lambda x : x + '\n', lines)
 
@@ -217,6 +215,7 @@ def checkCapitalisation(x):
   return x
 
 def modifyMetaTags(config, path):
+  print("[META] {}".format(path))
   if os.path.isdir(path) == False:
     raise ValueError("{} must be a directory".format(path))
   dirName = os.path.basename(path)
@@ -252,6 +251,7 @@ def modifyMetaTags(config, path):
             os.remove(outFilePath)
           else:
             raise RuntimeError("Modified file {} was zero length.\nFFmpeg command executed was:\n'{}'".format(outFilePath, cmd))
+    break # we don't want to recurse down the directories here
 
 if __name__ == "__main__":
   configFilePath = None
